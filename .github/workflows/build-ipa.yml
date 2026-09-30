@@ -31,8 +31,8 @@ jobs:
           set -e
           curl -L -o xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.38.0/xcodegen.zip
           unzip -o xcodegen.zip -d xcodegen-bin
-                   echo "$PWD/xcodegen-bin/xcodegen/bin" >> $GITHUB_PATH
-          xcodegen --version
+          echo "$PWD/xcodegen-bin/xcodegen/bin" >> $GITHUB_PATH
+          "$PWD/xcodegen-bin/xcodegen/bin/xcodegen" --version
 
       - name: 找到并解压 App 源码 zip
         run: |
