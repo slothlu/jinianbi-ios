@@ -1,21 +1,13 @@
-# ============================================================
-# 路面纪念钞币科技 · iOS 独立 App 一键打包（GitHub 云 Mac）
-# 用途：把 App 源码 zip 转换成 iPhone 可安装的 .ipa（未签名）
-# 触发：在 GitHub Actions 页面手动点「Run workflow」
-# 要求：仓库必须设为 Public（macOS 构建器免费额度只对公开仓库生效）
-# 安装：未签名 IPA 需要企业签名后，在 iPhone
-#       「设置 → 通用 → VPN 与设备管理」信任后安装
-# ============================================================
 name: 打包iOS独立App-生成未签名IPA
 
 on:
-  workflow_dispatch:      # 手动触发
+  workflow_dispatch:
   push:
     branches: [ main, master ]
 
 jobs:
   build-ipa:
-    runs-on: macos-14     # GitHub 的云 Mac，自带 Xcode
+    runs-on: macos-14
     timeout-minutes: 30
     steps:
       - name: 检出仓库
@@ -45,9 +37,11 @@ jobs:
           fi
           mkdir -p app_src
           unzip -o "$ZIP" -d app_src
-          echo "--- 解压结果（应包含 project.yml）---"
+          echo "--- 解压结果（应包含 project.yml 和 Sources/WebAssets）---"
           ls -la app_src
-          test -f app_src/project.yml || { echo "错误：zip 里没有 project.yml，原料不对"; exit 1; }
+          ls -la app_src/Sources | head -20
+          test -f app_src/project.yml || { echo "错误：zip 里没有 project.yml"; exit 1; }
+          test -d app_src/Sources/WebAssets || { echo "错误：zip 里没有 Sources/WebAssets"; exit 1; }
 
       - name: 生成 Xcode 工程
         run: |
@@ -79,9 +73,12 @@ jobs:
           APP=$(find ./app_src/build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
           echo "生成的 App: $APP"
           test -n "$APP" || { echo "错误：没有生成 .app"; exit 1; }
-          ls -la "$APP" | head -20
-          test -f "$APP/Info.plist" || { echo "错误：缺少 Info.plist"; exit 1; }
-          echo "App 结构正常"
+          echo "--- App 内资源文件列表 ---"
+          find "$APP" -type f | head -60
+          echo "--- 自检首页与脚本 ---"
+          find "$APP" -name "home.html" | head -1 || { echo "错误：home.html 没有被打进 App"; exit 1; }
+          find "$APP" -name "content.js" | head -1 || { echo "错误：content.js 没有被打进 App"; exit 1; }
+          echo "App 结构正常，资源齐全"
 
       - name: 打包成 .ipa（未签名）
         run: |
