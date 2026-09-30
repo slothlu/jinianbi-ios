@@ -1,0 +1,111 @@
+﻿# ============================================================
+# 路面纪念钞币科技 · iOS 一键打包（GitHub 云 Mac）
+# 用途：把 Safari 扩展 zip 自动转换成 iPhone 可安装的 .ipa（未签名）
+# 触发：在 GitHub Actions 页面手动点「Run workflow」
+# 要求：仓库必须设为 Public（macOS 构建器免费额度只对公开仓库生效）
+# ============================================================
+name: 打包iOS版-生成未签名IPA
+
+on:
+  workflow_dispatch:      # 手动触发
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-ipa:
+    runs-on: macos-14     # GitHub 的云 Mac，自带 Xcode
+    timeout-minutes: 30
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 查看环境
+        run: |
+          xcodebuild -version
+          sw_vers
+
+      - name: 找到并解压扩展 zip
+        run: |
+          set -e
+          ZIP=$(find . -maxdepth 4 -name "*.zip" -not -path "./.github/*" | head -n 1)
+          echo "找到 zip: $ZIP"
+          mkdir -p ext_src
+          unzip -o "$ZIP" -d ext_src
+          echo "--- 解压结果（应包含 manifest.json）---"
+          ls -la ext_src
+          test -f ext_src/manifest.json || { echo "错误：zip 里没有 manifest.json，原料不对"; exit 1; }
+
+      - name: 转换为 Xcode 工程（iOS 专用）
+        run: |
+          set -e
+          xcrun safari-web-extension-converter ext_src \
+            --ios-only \
+            --app-name "LuMianJiNianBi" \
+            --project-location ./conv || true
+          echo "--- 转换完成，当前目录内容 ---"
+          ls -la
+          echo "--- 全范围查找 xcodeproj 工程文件 ---"
+          find . -maxdepth 3 -name "*.xcodeproj" -not -path "./build/*"
+
+      - name: 构建未签名 .app
+        run: |
+          set -e
+          # 自动查找工程文件（可能在仓库根目录或 conv 子目录，不写死位置）
+          PROJ=$(find . -maxdepth 4 -name "*.xcodeproj" -not -path "./build/*" | head -n 1)
+          echo "找到工程: $PROJ"
+          if [ -z "$PROJ" ]; then
+            echo "错误：没有找到 .xcodeproj 工程文件，当前目录结构如下："
+            ls -la
+            find . -maxdepth 3 | head -60
+            exit 1
+          fi
+          # 打印 xcodebuild -list 输出便于排查
+          echo "--- xcodebuild -list 输出 ---"
+          xcodebuild -list -project "$PROJ" 2>&1 || true
+          # 自动读取 scheme 名（Schemes: 下面的第一行）
+          SCHEME=$(xcodebuild -list -project "$PROJ" 2>&1 | sed -n '/Schemes:/,$p' | tail -n +2 | head -n 1 | tr -d ' ')
+          echo "Scheme: [$SCHEME]"
+          if [ -z "$SCHEME" ]; then
+            echo "错误：没有找到 scheme 名"
+            exit 1
+          fi
+          xcodebuild \
+            -project "$PROJ" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath ./build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: 检查扩展是否被打进 App
+        run: |
+          set -e
+          APP=$(find ./build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
+          echo "生成的 App: $APP"
+          echo "--- App 结构（应看到 PlugIns 下的 .appex）---"
+          ls -R "$APP" | head -60
+          APPEX=$(find "$APP/PlugIns" -maxdepth 1 -name "*.appex" | head -n 1)
+          test -n "$APPEX" || { echo "错误：没有找到扩展 .appex"; exit 1; }
+          test -f "$APPEX/manifest.json" || { echo "错误：.appex 里没有 manifest.json"; exit 1; }
+          echo "扩展 appex 正常：$APPEX"
+
+      - name: 打包成 .ipa（未签名）
+        run: |
+          set -e
+          APP=$(find ./build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -r -y LuMianJiNianBi-unsigned.ipa Payload
+          echo "--- 生成的 IPA ---"
+          ls -la LuMianJiNianBi-unsigned.ipa
+
+      - name: 上传 IPA 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: LuMianJiNianBi-iOS-unsigned-IPA
+          path: LuMianJiNianBi-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
