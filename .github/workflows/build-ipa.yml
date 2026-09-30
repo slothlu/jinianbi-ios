@@ -26,8 +26,13 @@ jobs:
           xcodebuild -version
           sw_vers
 
-      - name: 安装 XcodeGen
-        run: brew install xcodegen
+      - name: 安装 XcodeGen 2.38（兼容 Xcode 15）
+        run: |
+          set -e
+          curl -L -o xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.38.0/xcodegen.zip
+          unzip -o xcodegen.zip -d xcodegen-bin
+          echo "$PWD/xcodegen-bin" >> $GITHUB_PATH
+          xcodegen --version
 
       - name: 找到并解压 App 源码 zip
         run: |
