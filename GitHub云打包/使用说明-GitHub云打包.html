@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>iOS 云打包 + 轻松签安装教程 · 路面纪念钞币</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    margin: 0; background: #f3f5f9; color: #1f2937; line-height: 1.7;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 28px 18px 60px; }
+  h1 { font-size: 24px; margin: 0 0 4px; color: #0f172a; }
+  .sub { color: #6b7280; font-size: 14px; margin-bottom: 22px; }
+  h2 { font-size: 19px; margin: 32px 0 12px; color: #0f172a;
+       border-left: 4px solid #2563eb; padding-left: 10px; }
+  .step {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+    padding: 14px 16px 14px 58px; margin-bottom: 12px; position: relative;
+  }
+  .step .n {
+    position: absolute; left: 14px; top: 14px; width: 30px; height: 30px;
+    background: #2563eb; color: #fff; border-radius: 50%; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; font-size: 14px;
+  }
+  .warn {
+    background: #fff7ed; border: 1px solid #fed7aa; border-radius: 12px;
+    padding: 12px 16px; margin: 14px 0; color: #9a3412; font-size: 14.5px;
+  }
+  .ok {
+    background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px;
+    padding: 12px 16px; margin: 14px 0; color: #166534; font-size: 14.5px;
+  }
+  .tip {
+    background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px;
+    padding: 12px 16px; margin: 14px 0; color: #1e40af; font-size: 14.5px;
+  }
+  code { background: #f1f5f9; padding: 2px 7px; border-radius: 6px; font-size: 13.5px; color: #0f172a; }
+  .faq { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:6px 18px; }
+  .faq p { margin: 10px 0; }
+  b.q { color: #0f172a; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; background:#fff; border-radius: 12px; overflow: hidden; }
+  th, td { border: 1px solid #e5e7eb; padding: 9px 12px; text-align: left; vertical-align: top; }
+  th { background: #f8fafc; width: 30%; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>iOS 云打包 + 轻松签安装教程</h1>
+  <div class="sub">不需要 Mac、不需要花一分钱，约 30 分钟搞定</div>
+
+  <div class="ok">
+    <b>原理一句话：</b>GitHub 的服务器上有现成的 Mac + Xcode，免费帮你把扩展 zip 打包成
+    <code>.ipa</code>，然后用「轻松签」在你自己的 iPhone 上签名安装。全程不碰 Mac、不花一分钱。
+  </div>
+
+  <h2>本文件夹里有什么</h2>
+  <table>
+    <tr><th>路面纪念钞币科技-Safari.zip</th><td>iOS 版扩展包（已取消卡密），要上传到 GitHub 的原料</td></tr>
+    <tr><th>.github/workflows/build-ipa.yml</th><td>一键打包脚本，GitHub 会照着它自动打包</td></tr>
+  </table>
+
+  <h2>第 0 步：注册 GitHub 账号（10 分钟，免费）</h2>
+  <div class="step"><span class="n">0</span>
+    电脑浏览器打开 <code>github.com</code>，点 <b>Sign up</b>，用邮箱注册并设置密码；
+    按提示完成验证（如收不到邮件，检查垃圾箱；网页打不开就换个浏览器或网络试试）。
+  </div>
+
+  <div class="warn">
+    <b>重要：下面的仓库必须建为 Public（公开）。</b>GitHub 的免费 Mac 打包额度只对公开仓库生效，
+    私有仓库用 Mac 打包会按分钟收费。你的插件代码本来就在发给客户的 zip 里，仓库公开不增加额外泄露。
+  </div>
+
+  <h2>第 1 步：新建仓库（Public）</h2>
+  <div class="step"><span class="n">1</span>
+    登录后点右上角 <b>「+」→ New repository</b>：<br/>
+    · Repository name 填 <code>jinianbi-ios</code>；<br/>
+    · 选 <b>Public</b>（必须，见上方警告）；<br/>
+    · 其他不用动，点绿色 <b>Create repository</b>。
+  </div>
+
+  <h2>第 2 步：上传两个文件</h2>
+  <div class="step"><span class="n">2</span>
+    在新仓库页面点 <b>「Add file」→「Upload files」</b>，把本文件夹里的
+    <b>「路面纪念钞币科技-Safari.zip」</b> 和 <b>「.github」文件夹</b> 一起拖进页面（拖入 .github 文件夹会自动带上 workflows 子目录），
+    然后点绿色 <b>Commit changes</b>。
+  </div>
+  <div class="tip">
+    如果拖文件夹后看不到 <code>.github/workflows/build-ipa.yml</code>（文件列表里要能看到这两行路径），
+    改用另一种方式：点 <b>Add file → Create new file</b>，文件名栏手动输入
+    <code>.github/workflows/build-ipa.yml</code>，把脚本文件里的内容全部复制粘贴进去，再 Commit。
+  </div>
+
+  <h2>第 3 步：点按钮开始打包</h2>
+  <div class="step"><span class="n">3</span>
+    仓库页面顶部点 <b>「Actions」</b> 标签 → 左侧点 <b>「打包iOS版-生成未签名IPA」</b> →
+    右侧点 <b>「Run workflow」</b> → 绿色按钮。等 5–10 分钟，页面顶部会出现一个转圈的黄色圆点（正在打包）。
+  </div>
+  <div class="step"><span class="n">4</span>
+    打包完成（圆点变绿色 ✓）后，点进这次运行记录，页面底部 <b>Artifacts</b> 区域会出现
+    <b>LuMianJiNianBi-iOS-unsigned-IPA</b>，点它下载（下载下来是个 zip，解压后里面就是 <code>.ipa</code> 文件）。
+  </div>
+
+  <h2>第 4 步：传到 iPhone，用轻松签安装</h2>
+  <div class="step"><span class="n">5</span>
+    把 <code>.ipa</code> 文件通过微信/QQ 文件传输、网盘或数据线发到 iPhone。
+  </div>
+  <div class="step"><span class="n">6</span>
+    在 iPhone 上安装 <b>轻松签</b>：浏览器打开轻松签官网（如 quwan.store），
+    按页面提示先安装描述文件、再安装轻松签 App；装好后到
+    <b>设置 → 通用 → VPN 与设备管理</b> 信任对应描述文件。
+  </div>
+  <div class="step"><span class="n">7</span>
+    打开轻松签，把 <code>.ipa</code> 导入（微信收到的文件可用「用其他应用打开」→ 轻松签），
+    选择 <b>签名</b> → 选 <b>「Apple ID 签名」</b>并登录自己的 Apple ID（或用你自己的证书签名）→ 签名完成后点安装。
+  </div>
+  <div class="warn">
+    免费 Apple ID 签名的 App <b>每 7 天失效一次</b>，到期后重新打开轻松签，对已装的 App 重新签一次即可，不用再打包。
+  </div>
+
+  <h2>第 5 步：启用扩展并使用</h2>
+  <div class="step"><span class="n">8</span>
+    安装完成后到 <b>设置 → Safari 浏览器 → 扩展</b>，找到 <b>「LuMianJiNianBi」</b>（或中文名「路面纪念钞币科技」），打开开关。
+  </div>
+  <div class="step"><span class="n">9</span>
+    打开银行预约页面，点地址栏左侧 <b>「aA」</b> → <b>「请求桌面网站」</b>（每次都要），
+    悬浮窗出现后<b>点人员姓名</b>即自动识别验证码、填表并提交；按住悬浮窗顶部蓝色标题栏可拖动。
+  </div>
+
+  <h2>常见问题</h2>
+  <div class="faq">
+    <p><b class="q">Q：Actions 打包失败，显示红叉？</b><br/>
+       A：点进失败的那次运行，点开红色的步骤，把日志页面截图发给我，我帮你改脚本。常见原因是文件没传全或网络问题。</p>
+    <p><b class="q">Q：会不会扣我的钱？</b><br/>
+       A：只要仓库是 Public 就不会扣钱。如果 Actions 页面提示需要开启账单/billing，说明仓库建成了 Private，改回 Public 即可。</p>
+    <p><b class="q">Q：以后更新插件怎么办？</b><br/>
+       A：把新的 <code>路面纪念钞币科技-Safari.zip</code> 上传覆盖仓库里的旧文件，再到 Actions 里点一次 Run workflow，重新下载新 IPA。</p>
+    <p><b class="q">Q：装好后设置里找不到扩展？</b><br/>
+       A：确认描述文件已信任；在「设置 → Safari → 扩展」里打开开关；打开银行网站时 Safari 弹出授权提示要选「允许」。</p>
+    <p><b class="q">Q：没有悬浮窗 / 点人名没反应？</b><br/>
+       A：必须用「aA → 请求桌面网站」，并确认是支持的银行官网预约页面，然后刷新。</p>
+    <p><b class="q">Q：免费 Apple ID 签名 7 天过期，客户怎么办？</b><br/>
+       A：长期给客户用建议使用证书签名（个人/企业证书，有效期长）；7 天方案适合自用测试。</p>
+  </div>
+</div>
+</body>
+</html>
