@@ -1,0 +1,164 @@
+# ============================================================
+# 路面纪念钞币科技 · iOS 独立 App 一键云打包（GitHub 云 Mac）
+# 用途：把 App 源码 zip 转成 iPhone 可安装的 .ipa（未签名）
+# 触发：仓库里有源码 zip 后，在 Actions 页面点「Run workflow」
+#       （或推送代码到 main 分支自动触发）
+# 要求：仓库必须 Public（macOS 免费构建额度只对公开仓库开放）
+# 安装：未签名 IPA 需企业签名后，在 iPhone
+#       「设置 → 通用 → VPN 与设备管理」信任该证书，方可打开
+# 使用：把「路面纪念钞币科技-iOS独立App源码.zip」上传到仓库根目录，
+#       然后在 Actions → 打包iOS独立App-生成未签名IPA → Run workflow
+# ============================================================
+name: 打包iOS独立App-生成未签名IPA-v2
+
+on:
+  workflow_dispatch:      # 手动触发
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-ipa:
+    runs-on: macos-15     # GitHub 云 Mac：macos-15 自带 Xcode 16（兼容新版 XcodeGen 生成的项目格式 77）
+    timeout-minutes: 30
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 查看构建环境
+        run: |
+          xcodebuild -version
+          sw_vers
+          ls /Applications | grep -i xcode || true
+
+      - name: 锁定 Xcode 16（兼容项目格式 77）
+        run: |
+          set -e
+          XCODE_16=$(ls -d /Applications/Xcode_1[6-9]*.app 2>/dev/null | head -n 1)
+          if [ -n "$XCODE_16" ]; then
+            sudo xcode-select -s "$XCODE_16"
+            echo "已切换 Xcode: $XCODE_16"
+          else
+            echo "未找到独立 Xcode 16 目录，沿用系统默认"
+          fi
+          xcodebuild -version
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 定位 App 源码 zip（取最新一个）
+        run: |
+          set -e
+          echo "--- 仓库里的 zip 文件 ---"
+          find . -maxdepth 4 -iname "*.zip" -not -path "./.github/*"
+          ZIP=$(find . -maxdepth 4 -iname "*.zip" -not -path "./.github/*" -print0 \
+                | xargs -0 ls -t | head -n 1)
+          echo "选用 zip: $ZIP"
+          if [ -z "$ZIP" ]; then
+            echo "错误：仓库根目录没有源码 zip，请先上传 zip 再运行"
+            exit 1
+          fi
+          echo "ZIP_FILE=$ZIP" >> "$GITHUB_ENV"
+
+      - name: 解压源码 zip（正斜杠条目，避免反斜杠错误）
+        run: |
+          set -e
+          rm -rf app_src
+          mkdir -p app_src
+          unzip -o "$ZIP_FILE" -d app_src
+          echo "--- 解压结果 ---"
+          ls -la app_src
+          test -f app_src/project.yml || { echo "错误：zip 里没有 project.yml，原料不对"; exit 1; }
+
+      - name: 校验版本号与关键资源
+        run: |
+          set -e
+          cd app_src
+          echo "--- Info.plist 版本 ---"
+          grep -A1 "CFBundleShortVersionString" Sources/Info.plist || true
+          grep -A1 "CFBundleVersion" Sources/Info.plist || true
+          echo "--- 关键资源检查 ---"
+          test -f Sources/WebAssets/web/home.html || { echo "错误：home.html 缺失"; exit 1; }
+          test -f Sources/WebAssets/web/content.js || { echo "错误：content.js 缺失"; exit 1; }
+          test -f Sources/WebAssets/web/style_patch.js || { echo "错误：style_patch.js 缺失"; exit 1; }
+          echo "资源齐全 ✓"
+
+      - name: 生成 Xcode 工程
+        run: |
+          set -e
+          cd app_src
+          xcodegen generate
+          echo "--- 生成的工程 ---"
+          ls -la
+          xcodebuild -list -project LuMianJiNianBi.xcodeproj 2>&1 || true
+
+      - name: 构建未签名 .app（Release / 真机 iphoneos）
+        run: |
+          set -e
+          cd app_src
+          set +e
+          xcodebuild \
+            -project LuMianJiNianBi.xcodeproj \
+            -scheme LuMianJiNianBi \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath ./build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log
+          RC=${PIPESTATUS[0]}
+          set -e
+          if [ $RC -ne 0 ]; then
+            echo "======== 构建失败，打印详细错误 ========"
+            grep -nE "error:|Error:|failed|unable to|Alpha|AppIcon|not supported|cannot be opened|actool|CompileAssetCatalog" build.log | head -60 || true
+            echo "======== build.log 最后 40 行 ========"
+            tail -40 build.log || true
+            exit $RC
+          fi
+
+      - name: 上传失败日志（便于分析报错）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-failure-log
+          path: app_src/build.log
+          if-no-files-found: ignore
+
+      - name: 检查 App 结构与打包资源
+        run: |
+          set -e
+          APP=$(find ./app_src/build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
+          echo "生成的 App: $APP"
+          test -n "$APP" || { echo "错误：没有生成 .app"; exit 1; }
+          echo "--- App 内资源文件列表 ---"
+          find "$APP" -type f | head -60
+          echo "--- 自检首页与脚本 ---"
+          test -f "$APP/home.html" -o -f "$APP/web/home.html" -o -f "$APP/WebAssets/web/home.html" \
+            || { echo "错误：home.html 没有被打进 App"; exit 1; }
+          find "$APP" -name "content.js" | head -1 || { echo "错误：content.js 没有被打进 App"; exit 1; }
+          find "$APP" -name "style_patch.js" | head -1 || { echo "错误：style_patch.js 没有被打进 App"; exit 1; }
+          find "$APP" -name "date_fill.js" | head -1 || { echo "错误：date_fill.js 没有被打进 App"; exit 1; }
+          echo "App 结构正常，资源齐全 ✓"
+
+      - name: 打包成 .ipa（未签名）
+        run: |
+          set -e
+          APP=$(find ./app_src/build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist" 2>/dev/null || echo "unknown")
+          BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist" 2>/dev/null || echo "unknown")
+          echo "App 版本: $VERSION (build $BUILD)"
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -r -y "LuMianJiNianBi-App-v${VERSION}-unsigned.ipa" Payload
+          echo "--- 生成的 IPA ---"
+          ls -la LuMianJiNianBi-App-*.ipa
+          echo "IPA_NAME=LuMianJiNianBi-App-v${VERSION}-unsigned.ipa" >> "$GITHUB_ENV"
+
+      - name: 上传 IPA 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: LuMianJiNianBi-iOS-v1.0.2-unsigned-IPA
+          path: LuMianJiNianBi-App-*.ipa
+          if-no-files-found: error
+          retention-days: 14
