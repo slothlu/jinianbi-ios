@@ -1,0 +1,149 @@
+# ============================================================
+# 路面纪念钞币科技 · iOS 独立 App 一键云打包（GitHub 云 Mac）v3
+# 用途：把 App 源码 zip 转成 iPhone 可安装的 .ipa（未签名）
+# 触发：推送代码到 main 分支，或在 Actions 页手动「Run workflow」
+# 要求：仓库必须 Public（macOS 免费构建额度只对公开仓库开放）
+# 使用：把源码 zip 原封不动传到仓库根目录（zip 顶层须直接含
+#       project.yml / Sources/ / .github/，不要用 Windows 压缩
+#       工具重新打包，否则会因反斜杠路径解压失败）
+# ============================================================
+name: 打包iOS独立App-生成未签名IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 定位源码 zip（取最新一个）
+        run: |
+          set -e
+          ZIP=$(find . -maxdepth 4 -iname "*.zip" -not -path "./.github/*" -print0 \
+                | xargs -0 ls -t | head -n 1)
+          if [ -z "$ZIP" ]; then
+            echo "错误：仓库根目录没有源码 zip，请先上传 zip 再运行"
+            exit 1
+          fi
+          echo "选用 zip: $ZIP"
+          echo "ZIP_FILE=$ZIP" >> "$GITHUB_ENV"
+
+      - name: 解压并定位源码根目录
+        run: |
+          set -e
+          rm -rf app_src
+          mkdir -p app_src
+          unzip -o "$ZIP_FILE" -d app_src
+          echo "--- 解压顶层 ---"
+          ls -la app_src
+          # 容错：zip 若套了一层文件夹（app_src/app_src 或同名目录），自动修正
+          if [ -f app_src/project.yml ]; then
+            echo "顶层结构 OK"
+          elif [ -f app_src/app_src/project.yml ]; then
+            echo "检测到多层嵌套，自动修正"
+            mv app_src/app_src/* app_src/ 2>/dev/null || true
+            rm -rf app_src/app_src
+          else
+            echo "错误：zip 里找不到 project.yml，原料不对"
+            echo "要求：zip 顶层必须直接包含 project.yml / Sources/ / .github/"
+            echo "不要用 Windows 压缩工具重打包（会产生反斜杠路径）"
+            find app_src -maxdepth 3 -name "project.yml" | head -5
+            exit 1
+          fi
+          test -f app_src/project.yml && echo "project.yml 就位 ✓"
+
+      - name: 校验版本号与关键资源
+        run: |
+          set -e
+          cd app_src
+          echo "--- Info.plist 版本 ---"
+          grep -A1 "CFBundleShortVersionString" Sources/Info.plist || true
+          grep -A1 "CFBundleVersion" Sources/Info.plist || true
+          echo "--- 关键资源检查 ---"
+          for f in home.html content.js style_patch.js date_fill.js bridge_ios.js; do
+            test -f "Sources/WebAssets/web/$f" || { echo "错误：$f 缺失"; exit 1; }
+          done
+          echo "资源齐全 ✓"
+
+      - name: 生成 Xcode 工程
+        run: |
+          set -e
+          cd app_src
+          xcodegen generate
+          ls -la
+          xcodebuild -list -project LuMianJiNianBi.xcodeproj 2>&1 | head -30 || true
+
+      - name: 安装 iOS 平台与模拟器运行时
+        run: |
+          set -e
+          xcodebuild -downloadPlatform iOS 2>&1 | tail -5 || echo "已存在，继续"
+
+      - name: 构建未签名 .app（Release / 真机 iphoneos）
+        run: |
+          set -e
+          cd app_src
+          set +e
+          xcodebuild \
+            -project LuMianJiNianBi.xcodeproj \
+            -scheme LuMianJiNianBi \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath ./build \
+            ASSETCATALOG_GENERATE_SWIFT_ASSET_SYMBOLS=NO \
+            ASSETCATALOG_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS=NO \
+            ASSETCATALOG_GENERATE_OBJC_ASSET_SYMBOLS=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log
+          RC=${PIPESTATUS[0]}
+          set -e
+          if [ $RC -ne 0 ]; then
+            echo "======== 构建失败，关键错误 ========"
+            grep -nE "error:|Error:|failed|unable to|actool|CompileAssetCatalog|AppIcon|Alpha" build.log | head -60 || true
+            echo "======== build.log 最后 50 行 ========"
+            tail -50 build.log || true
+            exit $RC
+          fi
+
+      - name: 上传失败日志（便于分析报错）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-failure-log
+          path: app_src/build.log
+          if-no-files-found: ignore
+
+      - name: 打包成 .ipa（未签名）
+        run: |
+          set -e
+          APP=$(find ./app_src/build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
+          test -n "$APP" || { echo "错误：没有生成 .app"; exit 1; }
+          find "$APP" -name "content.js" | head -1 || { echo "错误：content.js 没有被打进 App"; exit 1; }
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist" 2>/dev/null || echo "unknown")
+          BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist" 2>/dev/null || echo "unknown")
+          echo "App 版本: $VERSION (build $BUILD)"
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -r -y "LuMianJiNianBi-App-v${VERSION}-unsigned.ipa" Payload
+          echo "--- 生成的 IPA ---"
+          ls -la LuMianJiNianBi-App-*.ipa
+          echo "IPA_NAME=LuMianJiNianBi-App-v${VERSION}-unsigned.ipa" >> "$GITHUB_ENV"
+
+      - name: 上传 IPA 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: LuMianJiNianBi-iOS-unsigned-IPA
+          path: LuMianJiNianBi-App-*.ipa
+          if-no-files-found: error
+          retention-days: 14
